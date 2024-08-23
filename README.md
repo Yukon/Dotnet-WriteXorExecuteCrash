@@ -1,6 +1,8 @@
 .NET 8 AMD64 Crash on Docker using Rosseta 2
 =======================================
-This is a simple project to reproduce a crash on .NET 8 running in AMD64 container on Docker using Rosseta 2 on Apple Silicon.
+Update: A fix has be implimented and is being backported to .NET 8.0.9. https://github.com/dotnet/runtime/issues/106819
+
+his is a simple project to reproduce a crash on .NET 8 running in AMD64 container on Docker using Rosseta 2 on Apple Silicon.
 
 The crash is caused by a new runtime feature [Write xor Execute](https://devblogs.microsoft.com/dotnet/announcing-net-6-preview-7/#runtime-wx-write-xor-execute-support-for-all-platforms-and-architectures) that is enabled by default in .NET 7 and subsequently .NET 8.
 
@@ -36,6 +38,6 @@ assertion failed [block != nullptr]: BasicBlock requested for unrecognized addre
 ### Root Cause
 There are [two allocator features](https://github.com/dotnet/runtime/blob/477de3419157d809dc266ea03ff3fb4c05f3d1c1/src/coreclr/utilcode/executableallocator.cpp#L123-L142) in the coreclr runtime that check `g_isWXorXEnabled` to enable specific functionality based on the `DOTNET_EnableWriteXorExecute` environment variable.
 
-Most intrestingly is `ExecutableAllocator::IsDoubleMappingEnabled` has a check `#if defined(HOST_OSX) && defined(HOST_ARM64)` which forces the double mapping to be disabled otherwise falling back to `g_isWXorXEnabled`. Double mapping is not supported in Apple Silicon using Rosetta, [which was intended to be fixed](https://github.com/dotnet/runtime/pull/70912). This is not completly the case though as the emulation check occures in the underlying `doublemapping.cpp` not in the allocator that has the `IsDoubleMappingEnabled`. This gap results in double mapping being implied it is enabled resulting in inapproprate memory calls in the allocator as well as double mapping methods without the `IsProcessTranslated` guard clause. By disabling W^E the `IsDoubleMappingEnabled` method always returns false, preventing any double mapping from occuring.
+Most intrestingly is `ExecutableAllocator::IsDoubleMappingEnabled` has a check `#if defined(HOST_OSX) && defined(HOST_ARM64)` which forces the double mapping to be disabled otherwise falling back to `g_isWXorXEnabled`. Double mapping is not supported in Apple Silicon using Rosetta, [which was intended to be fixed](https://github.com/dotnet/runtime/pull/70912). This is not completely the case though as the emulation check occurs in the underlying `doublemapping.cpp` not in the allocator that has the `IsDoubleMappingEnabled` check. This gap results in double mapping being implied it is enabled resulting in inappropriate memory calls in the allocator as well as double mapping methods without the `IsProcessTranslated` guard clause. By disabling W^E the `IsDoubleMappingEnabled` method always returns false, preventing any double mapping from occurring.
 
 The other enabled check `ExecutableAllocator::IsWXORXEnabled` is less intresting in that on Apple Silicon W^E is a requirment and thus is always enabled. Thereby having this specific funcitonality enabled in a virtualized environment would be supported and only enhance security at the cost of some performance.
